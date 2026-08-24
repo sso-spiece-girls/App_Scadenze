@@ -32,11 +32,22 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  color-scheme: light;
+}
+
+html.dark {
+  /* Native controls (date picker, selects, autofill) follow the dark theme */
+  color-scheme: dark;
 }
 
 body {
   font-family: var(--font-sans);
   overscroll-behavior-y: none;
+  color: var(--color-ink-900);
+}
+
+html.dark body {
+  color: var(--color-ink-100);
 }
 
 /* Safe-area helpers for standalone PWA (notches / home indicators) */

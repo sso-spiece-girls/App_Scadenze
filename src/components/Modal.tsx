@@ -20,7 +20,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
       <div className="animate-sheet-up relative w-full max-w-md rounded-t-3xl bg-white p-6 shadow-2xl dark:bg-ink-900 md:rounded-3xl">
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink-200 dark:bg-ink-700 md:hidden" />
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-bold">{title}</h2>
+          <h2 className="text-base font-bold text-ink-900 dark:text-ink-100">{title}</h2>
           <button
             onClick={onClose}
             className="grid size-8 place-items-center rounded-full text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800"

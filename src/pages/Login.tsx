@@ -89,7 +89,7 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-ink-50 px-6 dark:bg-ink-950">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-ink-50 px-6 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <span className="grid size-16 place-items-center rounded-3xl bg-brand-600 text-3xl text-white shadow-lg shadow-brand-600/30">

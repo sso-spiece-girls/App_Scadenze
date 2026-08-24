@@ -5,7 +5,7 @@ export function AccessDenied() {
   const { signOut } = useAuth();
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-ink-50 px-6 text-center dark:bg-ink-950">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-ink-50 px-6 text-center text-ink-900 dark:bg-ink-950 dark:text-ink-100">
       <span className="text-5xl" aria-hidden="true">🚫</span>
       <h1 className="mt-4 text-xl font-extrabold tracking-tight">Accesso negato</h1>
       <p className="mt-2 max-w-xs text-sm text-ink-500 dark:text-ink-400">
