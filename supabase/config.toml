@@ -1,0 +1,68 @@
+# Supabase configuration — used by the Supabase CLI (`supabase start`, `supabase db push`, `supabase functions deploy`).
+# Copy this to `supabase/config.toml` (or keep it, since the CLI reads it from here).
+
+project_id = "app-scadenza"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**"]
+jwt_expiry = 3600
+enable_signup = true
+# Email OTP (magic link) login — no passwords required.
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+[analytics]
+enabled = true
+port = 54325
+
+# ---------------------------------------------------------------------------
+# Edge functions
+# ---------------------------------------------------------------------------
+
+# coop-price: automatic Coop.fi / S-Kaupat price lookup for a scanned barcode.
+# Called from the frontend with the user's JWT (verify_jwt = true).
+[functions.coop-price]
+verify_jwt = true
+
+# mark-expired: daily maintenance — transitions active -> expired -> wasted.
+# Runs as a cron job; no user JWT, uses the service role internally.
+[functions.mark-expired]
+verify_jwt = false
+
+[functions.mark-expired.cron]
+schedule = "20 6 * * *"
+
+# notify-expiring: daily push notifications for products expiring within 7 days.
+[functions.notify-expiring]
+verify_jwt = false
+
+[functions.notify-expiring.cron]
+schedule = "0 6 * * *"
