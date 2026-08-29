@@ -16,7 +16,9 @@ const ENV_ALLOWED_EMAILS = (import.meta.env.VITE_ALLOWED_EMAILS ?? "")
   .filter(Boolean);
 
 export const ALLOWED_EMAILS: readonly string[] =
-  ENV_ALLOWED_EMAILS.length > 0 ? ENV_ALLOWED_EMAILS : ["naldilisa568@gmail.com"];
+  ENV_ALLOWED_EMAILS.length > 0
+    ? ENV_ALLOWED_EMAILS
+    : ["naldilisa568@gmail.com", "naldilisa93@gmail.com"];
 
 /** True when the email may use the app (case-insensitive, trimmed). */
 export function isAllowedEmail(email: string | null | undefined): boolean {
