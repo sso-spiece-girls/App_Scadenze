@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Product } from "../types";
 import { parseDateOnly } from "./date";
-import { computeEffectiveStatus, decorateProducts, filterProducts } from "./status";
+import { computeEffectiveStatus, decorateProducts, filterProducts, isWastedProduct } from "./status";
 
 function makeProduct(overrides: Partial<Product> = {}): Product {
   return {
@@ -14,6 +14,11 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     image_url: null,
     quantity: null,
     unit: null,
+    quantity_count: 1,
+    consumed_count: 0,
+    notes: null,
+    import_method: "manual",
+    purchase_id: null,
     purchase_date: null,
     expiration_date: "2026-08-30",
     price: 2.5,
@@ -57,6 +62,17 @@ describe("computeEffectiveStatus", () => {
 
   it("keeps an explicitly wasted product wasted regardless of dates", () => {
     const p = makeProduct({ status: "wasted", wasted_at: "2026-08-01T00:00:00Z", expiration_date: "2026-09-30" });
+    expect(computeEffectiveStatus(p, TODAY)).toBe("wasted");
+  });
+
+  it("keeps a product without expiration active and never auto-wastes it", () => {
+    const p = makeProduct({ status: "active", expiration_date: null });
+    expect(computeEffectiveStatus(p, TODAY)).toBe("active");
+    expect(isWastedProduct(p, TODAY)).toBe(false);
+  });
+
+  it("lets the user manually waste a product without expiration", () => {
+    const p = makeProduct({ status: "wasted", expiration_date: null, wasted_at: "2026-08-01T00:00:00Z" });
     expect(computeEffectiveStatus(p, TODAY)).toBe("wasted");
   });
 });

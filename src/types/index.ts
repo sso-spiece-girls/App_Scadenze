@@ -6,8 +6,15 @@
 
 export type ProductStatus = "active" | "finished" | "expired" | "wasted";
 
-/** Source of a price value. */
+/**
+ * Source of a price value.
+ * `s-kaupat` is LEGACY: kept in the union only to read historical rows saved
+ * before the S-Kaupat (Finnish) source was removed — never written anymore.
+ */
 export type PriceSource = "s-kaupat" | "openfoodfacts" | "manual" | "none" | "unknown";
+
+/** How a product / purchase was entered into the app. */
+export type ImportMethod = "barcode" | "receipt_barcode" | "ocr" | "manual";
 
 /** Effective (display) status computed for the UI. */
 export type EffectiveStatus = ProductStatus;
@@ -24,8 +31,20 @@ export interface Product {
   quantity: string | null;
   /** Base unit, e.g. "l", "g", "kg", "pcs". */
   unit: string | null;
+  /** Physical units bought (3 milk cartons → 3). Waste is quantity-aware. */
+  quantity_count: number;
+  /** Units already consumed (0..quantity_count). */
+  consumed_count: number;
+  /** Free-text notes entered by the user. */
+  notes: string | null;
+  /** How the product was entered (barcode / receipt_barcode / ocr / manual). */
+  import_method: ImportMethod;
+  /** Purchase that produced this product, when imported from a receipt. */
+  purchase_id: string | null;
   purchase_date: string | null;
-  expiration_date: string;
+  /** Null when the expiry is unknown (e.g. receipt imports) — never invented. */
+  expiration_date: string | null;
+  /** Unit price actually paid (€). */
   price: number;
   price_source: PriceSource;
   price_fetched_at: string | null;
@@ -54,8 +73,16 @@ export interface ProductInput {
   image_url?: string | null;
   quantity?: string | null;
   unit?: string | null;
+  /** Physical units bought (default 1). */
+  quantity_count?: number;
+  /** Units already consumed (default 0). */
+  consumed_count?: number;
+  notes?: string | null;
+  import_method?: ImportMethod;
+  purchase_id?: string | null;
   purchase_date?: string | null;
-  expiration_date: string;
+  /** Null when unknown (receipt import): the user sets it later. */
+  expiration_date: string | null;
   price?: number;
   price_source?: PriceSource;
   price_fetched_at?: string | null;
@@ -71,21 +98,6 @@ export interface ProductLookup {
   quantity?: string | null;
   unit?: string | null;
   source: "catalog" | "openfoodfacts";
-}
-
-/** Result of an automatic price lookup (Coop.fi / S-Kaupat). */
-export interface PriceLookupResult {
-  found: boolean;
-  price?: number;
-  currency?: string;
-  name?: string;
-  brand?: string | null;
-  category?: string | null;
-  image_url?: string | null;
-  source: PriceSource;
-  fetchedAt?: string;
-  /** True when the value came from the local cache instead of a live lookup. */
-  cached?: boolean;
 }
 
 /** Local user catalog entry (barcode → product identity). */
@@ -131,14 +143,66 @@ export interface WasteStats {
   month: number;
   /** Waste value for the current calendar year. */
   year: number;
-  /** Total number of wasted items. */
+  /** Total number of wasted product rows. */
   count: number;
+  /** Total number of wasted physical units (quantity-aware). */
+  units: number;
   /** Average value per wasted item. */
   average: number;
   /** Waste as a percentage of all registered spending. */
   percentOfSpent: number;
   /** Wasted items grouped by category (sorted by value, desc). */
   byCategory: { category: string; value: number; count: number }[];
+  /** Single product with the highest waste value (by units remaining). */
+  topProduct: { name: string; value: number } | null;
+}
+
+/** One shopping trip imported from a receipt or entered manually. */
+export interface Purchase {
+  id: string;
+  user_id: string;
+  store: string | null;
+  purchase_date: string;
+  total: number | null;
+  import_method: ImportMethod;
+  receipt_identifier: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One line of a purchase (receipt row). */
+export interface PurchaseItem {
+  id: string;
+  purchase_id: string;
+  product_id: string | null;
+  barcode: string | null;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  created_at: string;
+}
+
+/** A single parsed receipt line (OCR output, pre-confirmation). */
+export interface ReceiptLine {
+  name: string;
+  /** Number of units bought. */
+  quantity: number;
+  /** Unit price (€). */
+  unitPrice: number;
+  /** Line total (€) = quantity × unitPrice when both known. */
+  totalPrice: number;
+  barcode?: string | null;
+}
+
+/** Parsed receipt: lines + optional envelope data (date, store, total). */
+export interface ParsedReceipt {
+  lines: ReceiptLine[];
+  total: number | null;
+  purchaseDate: string | null;
+  store: string | null;
 }
 
 export interface AppSettings {

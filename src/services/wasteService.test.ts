@@ -15,6 +15,11 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     image_url: null,
     quantity: null,
     unit: null,
+    quantity_count: 1,
+    consumed_count: 0,
+    notes: null,
+    import_method: "manual",
+    purchase_id: null,
     purchase_date: null,
     expiration_date: "2026-08-30",
     price: 2,
@@ -54,6 +59,34 @@ describe("wasteValueOf", () => {
     const p = makeProduct({ status: "expired", expiration_date: "2026-08-22", price: 4 });
     expect(wasteValueOf(p, REF)).toBe(0);
   });
+
+  it("is quantity-aware: only the remaining units count (price × remaining)", () => {
+    // 3 units bought at 1.49, 2 consumed → 1 unit wasted → 1.49.
+    const p = makeProduct({
+      status: "wasted",
+      wasted_at: "2026-08-10T00:00:00Z",
+      price: 1.49,
+      quantity_count: 3,
+      consumed_count: 2,
+    });
+    expect(wasteValueOf(p, REF)).toBeCloseTo(1.49, 2);
+  });
+
+  it("wastes nothing when all units were consumed", () => {
+    const p = makeProduct({
+      status: "wasted",
+      wasted_at: "2026-08-10T00:00:00Z",
+      price: 2,
+      quantity_count: 3,
+      consumed_count: 3,
+    });
+    expect(wasteValueOf(p, REF)).toBe(0);
+  });
+
+  it("never auto-wastes a product without an expiration date", () => {
+    const p = makeProduct({ status: "active", expiration_date: null, price: 2 });
+    expect(wasteValueOf(p, REF)).toBe(0);
+  });
 });
 
 describe("computeWasteStats", () => {
@@ -70,6 +103,7 @@ describe("computeWasteStats", () => {
   it("totals only wasted values", () => {
     expect(stats.total).toBe(3.7); // 1.5 + 2.2
     expect(stats.count).toBe(2);
+    expect(stats.units).toBe(2);
   });
 
   it("attributes to the current month and year", () => {
@@ -92,6 +126,18 @@ describe("computeWasteStats", () => {
       { category: "Carne", value: 2.2, count: 1 },
       { category: "Latticini e uova", value: 1.5, count: 1 },
     ]);
+  });
+
+  it("tracks units and the top product when quantities are involved", () => {
+    const multi = [
+      makeProduct({ id: "x", status: "wasted", wasted_at: "2026-08-10T00:00:00Z", price: 1.49, quantity_count: 3, consumed_count: 2, name: "Latte", category: "Latticini e uova" }),
+      makeProduct({ id: "y", status: "wasted", wasted_at: "2026-08-10T00:00:00Z", price: 0.99, quantity_count: 2, consumed_count: 0, name: "Pane", category: "Pane" }),
+    ];
+    const s = computeWasteStats(multi, REF);
+    expect(s.units).toBe(3); // 1 remaining + 2 remaining
+    expect(s.byCategory[0]).toEqual({ category: "Pane", value: 1.98, count: 2 });
+    expect(s.topProduct).toEqual({ name: "Pane", value: 1.98 });
+    expect(totalSpent(multi)).toBeCloseTo(1.49 * 3 + 0.99 * 2, 2);
   });
 });
 

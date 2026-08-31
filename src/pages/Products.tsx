@@ -14,6 +14,7 @@ const FILTERS: { value: ProductFilter; label: string }[] = [
   { value: "expired", label: "Scaduti" },
   { value: "wasted", label: "Sprecati" },
   { value: "finished", label: "Finiti" },
+  { value: "noexpiry", label: "Senza scadenza" },
 ];
 
 function isProductFilter(value: string | null): value is ProductFilter {
@@ -122,7 +123,7 @@ export function Products() {
         </div>
       )}
 
-      <ProductActionDialogs actions={actions} />
+      <ProductActionDialogs actions={actions} api={api} />
     </div>
   );
 }

@@ -1,90 +1,82 @@
-import { useMemo, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useProducts } from "../hooks/useProducts";
 import { useToastContext } from "../context/ToastContext";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner";
-import { lookupProduct, findExistingByBarcode, saveToCatalog } from "../services/productService";
-import { fetchCoopPrice } from "../services/priceService";
+import { findExistingByBarcode, lookupProduct, saveToCatalog } from "../services/productService";
 import { validateBarcode, normalizeBarcode } from "../utils/barcode";
-import { addDays, formatDate, toDateOnly, todayLocal } from "../utils/date";
-import { formatEuro, formatNumber, parseEuro } from "../utils/money";
-import { CATEGORIES } from "../utils/categories";
-import type { PriceLookupResult, Product } from "../types";
+import { formatDate } from "../utils/date";
 import { Spinner } from "../components/ui";
+import { ProductForm, emptyFormValues, type ProductFormValues } from "../components/ProductForm";
+import type { Product, ProductLookup } from "../types";
 
-const DEFAULT_OFFSET_DAYS = 7;
+type LookupSource = ProductLookup["source"] | "none";
 
 export function AddProduct() {
   const api = useProducts(true);
   const { show } = useToastContext();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // -- capture state -------------------------------------------------------
   const [barcode, setBarcode] = useState<string | null>(null);
-  const [manualMode, setManualMode] = useState(false);
+  const [manualMode, setManualMode] = useState(() => searchParams.get("mode") === "manual");
   const [scanActive, setScanActive] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
   const [existing, setExisting] = useState<Product[]>([]);
-
-  // -- form state ----------------------------------------------------------
-  const [name, setName] = useState("");
-  const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [unit, setUnit] = useState("");
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [purchaseDate, setPurchaseDate] = useState("");
-  const [expirationDate, setExpirationDate] = useState(() => toDateOnly(addDays(todayLocal(), DEFAULT_OFFSET_DAYS)));
-  const [priceText, setPriceText] = useState("");
-  const [priceLookup, setPriceLookup] = useState<PriceLookupResult | null>(null);
-  const [priceBusy, setPriceBusy] = useState(false);
-  const [priceTouched, setPriceTouched] = useState(false);
+  const [invalidCode, setInvalidCode] = useState<string | null>(null);
+  const [lookupSource, setLookupSource] = useState<LookupSource>("none");
+  const [formSeed, setFormSeed] = useState<ProductFormValues>(() => emptyFormValues());
+  const [formKey, setFormKey] = useState(0);
   const [saving, setSaving] = useState(false);
 
-  const [lookupSource, setLookupSource] = useState<"catalog" | "openfoodfacts" | "none">("none");
-
-  const { videoRef, error: scanError, isScanning } = useBarcodeScanner(scanActive, handleDetected);
-
-  const hasLookup = lookupSource !== "none";
-
-  // -- barcode handling -----------------------------------------------------
-  async function handleDetected(raw: string) {
+  const handleDetected = (raw: string) => {
     setScanActive(false);
     const code = normalizeBarcode(raw);
     const info = validateBarcode(code);
     if (!info.valid) {
+      setInvalidCode(raw);
       show(`Codice non valido (${raw})`, "error");
       return;
     }
-    await applyCode(code);
-  }
+    setInvalidCode(null);
+    void applyCode(code);
+  };
 
+  const { videoRef, error: scanError, isScanning, toggleCamera, facing } = useBarcodeScanner(scanActive, handleDetected);
+
+  // -- barcode handling -----------------------------------------------------
   async function applyCode(code: string) {
     setBarcode(code);
     setLookupBusy(true);
     try {
-      const { lookup, source } = await lookupProduct(code);
-      if (lookup) {
-        setName(lookup.name);
-        setBrand(lookup.brand ?? "");
-        setCategory(lookup.category ?? "");
-        setQuantity(lookup.quantity ?? "");
-        setUnit(lookup.unit ?? "");
-        setImageUrl(lookup.image_url ?? null);
-      }
+      // Product identity and "already in pantry" check run in parallel.
+      const [{ lookup, source }, found] = await Promise.all([
+        lookupProduct(code),
+        findExistingByBarcode(code).catch(() => [] as Product[]),
+      ]);
+      setExisting(found);
       setLookupSource(source);
-      try {
-        const found = await findExistingByBarcode(code);
-        setExisting(found);
-      } catch {
-        setExisting([]);
-      }
 
-      // The price is fetched automatically as soon as the product is known:
-      // the user only confirms or corrects it (never forced to type it).
       if (lookup) {
-        void runPriceLookup(code, lookup.name, lookup.brand ?? null);
+        setFormSeed({
+          name: lookup.name,
+          brand: lookup.brand ?? "",
+          category: lookup.category ?? "",
+          quantity: lookup.quantity ?? "",
+          unit: lookup.unit ?? "",
+          quantityCount: "1",
+          purchaseDate: "",
+          expirationDate: emptyFormValues().expirationDate,
+          priceText: "",
+          notes: "",
+          imageUrl: lookup.image_url ?? null,
+        });
+        setFormKey((k) => k + 1);
+      } else {
+        setFormSeed(emptyFormValues());
+        setFormKey((k) => k + 1);
       }
     } catch {
       setLookupSource("none");
@@ -104,79 +96,31 @@ export function AddProduct() {
     await applyCode(normalizeBarcode(codeInput));
   };
 
-  // -- price lookup ---------------------------------------------------------
-  /** Looks up the price (auto after scan, or on demand). Fills the field only as a suggestion. */
-  async function runPriceLookup(code: string, productName: string, productBrand: string | null) {
-    if (priceBusy) return;
-    setPriceBusy(true);
-    const result = await fetchCoopPrice(code, productName, productBrand);
-    setPriceLookup(result);
-    if (result.found && result.price != null) {
-      setPriceText(formatNumber(result.price));
-      setPriceTouched(false);
-    }
-    setPriceBusy(false);
-  }
-
-  function onPriceLookup() {
-    if (!barcode || priceBusy) return;
-    void runPriceLookup(barcode, name, brand);
-  }
-
   // -- save -----------------------------------------------------------------
-  async function onSave(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      show("Inserisci il nome del prodotto", "error");
-      return;
-    }
-    if (!expirationDate) {
-      show("Inserisci la data di scadenza", "error");
-      return;
-    }
-    let price = 0;
-    if (priceText.trim()) {
-      const parsed = parseEuro(priceText);
-      if (parsed === null) {
-        show("Prezzo non valido (es. 2,99)", "error");
-        return;
-      }
-      price = parsed;
-    }
-
+  const onSave = async (input: Omit<Parameters<typeof api.add>[0], "barcode">) => {
     setSaving(true);
     try {
+      const source = lookupSource;
       await api.add({
+        ...input,
         barcode: barcode ?? `manual-${Date.now()}`,
-        name: name.trim(),
-        brand: brand.trim() || null,
-        category: category || null,
-        image_url: imageUrl,
-        quantity: quantity.trim() || null,
-        unit: unit.trim() || null,
-        purchase_date: purchaseDate || null,
-        expiration_date: expirationDate,
-        price,
-        price_source: priceLookup?.found ? priceLookup.source : "manual",
-        price_fetched_at: priceLookup?.fetchedAt ?? null,
-        price_was_manually_corrected: priceLookup?.found ? priceTouched : false,
+        import_method: barcode ? "barcode" : "manual",
       });
       show("Prodotto aggiunto alla dispensa", "success");
       navigate("/products");
 
       // Remember manually-entered identities so future scans are instant.
-      // (OFF/catalog lookups are already saved inside lookupProduct.)
-      if (barcode && lookupSource === "none") {
+      if (barcode && source === "none") {
         try {
           await saveToCatalog(
             barcode,
             {
-              name: name.trim(),
-              brand: brand.trim() || null,
-              category: category || null,
-              image_url: imageUrl,
-              quantity: quantity.trim() || null,
-              unit: unit.trim() || null,
+              name: input.name,
+              brand: input.brand ?? null,
+              category: input.category ?? null,
+              image_url: input.image_url ?? null,
+              quantity: input.quantity ?? null,
+              unit: input.unit ?? null,
             },
             "manual",
           );
@@ -189,34 +133,19 @@ export function AddProduct() {
     } finally {
       setSaving(false);
     }
-  }
+  };
 
   const resetCapture = () => {
     setBarcode(null);
     setManualMode(false);
     setScanActive(false);
     setCodeInput("");
+    setInvalidCode(null);
     setLookupSource("none");
     setExisting([]);
-    setPriceLookup(null);
-    setPriceText("");
-    setPriceTouched(false);
-    setName("");
-    setBrand("");
-    setCategory("");
-    setQuantity("");
-    setUnit("");
-    setImageUrl(null);
-    setPurchaseDate("");
-    setExpirationDate(toDateOnly(addDays(todayLocal(), DEFAULT_OFFSET_DAYS)));
+    setFormSeed(emptyFormValues());
+    setFormKey((k) => k + 1);
   };
-
-  const cameraErrorLabel = useMemo(() => {
-    if (scanError === "denied") return "Permesso fotocamera negato";
-    if (scanError === "no-camera") return "Nessuna fotocamera disponibile";
-    if (scanError === "unknown") return "Errore durante la scansione";
-    return null;
-  }, [scanError]);
 
   // -- render ---------------------------------------------------------------
   if (!barcode && !manualMode) {
@@ -236,21 +165,82 @@ export function AddProduct() {
                 Inquadra il codice a barre…
               </p>
             )}
+            <button
+              type="button"
+              onClick={toggleCamera}
+              className="absolute right-3 top-3 rounded-full bg-black/50 px-3 py-2 text-xs font-bold text-white backdrop-blur"
+            >
+              🔄 {facing === "environment" ? "Posteriore" : "Frontale"}
+            </button>
           </div>
         )}
 
-        {cameraErrorLabel && (
+        {scanError && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-            {cameraErrorLabel}. Puoi comunque inserire il codice manualmente.
+            {scanError === "denied"
+              ? "Permesso fotocamera negato. Abilitalo dalle impostazioni del browser."
+              : scanError === "no-camera"
+                ? "Nessuna fotocamera disponibile."
+                : "Errore durante la scansione."}
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => setScanActive(true)}
+                className="rounded-xl bg-ink-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-ink-900"
+              >
+                Riprova
+              </button>
+              <button
+                onClick={() => setManualMode(true)}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-ink-700 dark:bg-ink-800 dark:text-ink-200"
+              >
+                Inserisci manualmente
+              </button>
+            </div>
           </div>
         )}
 
-        {!scanActive && !cameraErrorLabel && (
+        {invalidCode && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            Codice non riconosciuto ({invalidCode}).
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setInvalidCode(null);
+                  setScanActive(true);
+                }}
+                className="rounded-xl bg-ink-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-ink-900"
+              >
+                🔄 Riprova
+              </button>
+              <button
+                onClick={() => {
+                  setInvalidCode(null);
+                  setCodeInput(invalidCode);
+                  setManualMode(true);
+                }}
+                className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-ink-700 dark:bg-ink-800 dark:text-ink-200"
+              >
+                Usa questo codice
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!scanActive && !scanError && !invalidCode && (
           <button
             onClick={() => setScanActive(true)}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 py-4 text-sm font-bold text-white shadow-lg shadow-brand-600/30 transition hover:bg-brand-700"
           >
             📷 Scansiona codice
+          </button>
+        )}
+
+        {scanActive && (
+          <button
+            onClick={() => setScanActive(false)}
+            className="w-full rounded-2xl px-4 py-3 text-sm font-semibold text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800"
+          >
+            Chiudi scanner
           </button>
         )}
 
@@ -285,14 +275,16 @@ export function AddProduct() {
   }
 
   // -- form view -------------------------------------------------------------
+  const hasLookup = lookupSource !== "none";
+
   return (
-    <form onSubmit={onSave} className="space-y-4">
+    <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Aggiungi prodotto</h1>
           {barcode && <p className="mt-0.5 break-all text-sm text-ink-500 dark:text-ink-400">Codice: {barcode}</p>}
         </div>
-        <button type="button" onClick={resetCapture} className="rounded-2xl px-3 py-2 text-sm font-semibold text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800">
+        <button onClick={resetCapture} className="rounded-2xl px-3 py-2 text-sm font-semibold text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800">
           ← Cambia
         </button>
       </header>
@@ -303,192 +295,36 @@ export function AddProduct() {
         </div>
       )}
 
+      {!hasLookup && !lookupBusy && barcode && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          <p className="font-bold">Prodotto non trovato.</p>
+          <p className="mt-1">
+            Nessuna fonte conosce questo codice. Inserisci i dati manualmente: verranno ricordati per le prossime scansioni.
+          </p>
+        </div>
+      )}
+
       {existing.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
           <p className="font-bold">Questo prodotto è già presente.</p>
           <p className="mt-1">
-            Hai {existing.length} confezion{existing.length > 1 ? "i" : "e"} in dispensa
-            {existing.length > 0 && (
-              <>
-                {" "}(scadenz{existing.length > 1 ? "e" : "a"}: {existing.map((p) => formatDate(p.expiration_date)).join(", ")})
-              </>
-            )}
-            . Puoi aggiungere una nuova confezione con una scadenza diversa.
+            Hai {existing.length} confezion{existing.length > 1 ? "i" : "e"} in dispensa (scadenz
+            {existing.length > 1 ? "e" : "a"}: {existing.map((p) => formatDate(p.expiration_date)).join(", ")}).
+            Puoi aggiungere una nuova confezione con una scadenza diversa.
           </p>
         </div>
       )}
 
-      {hasLookup && !lookupBusy && (
-        <div className="flex items-center gap-3 rounded-2xl border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900">
-          {imageUrl ? (
-            <img src={imageUrl} alt="" className="size-12 rounded-xl object-cover" />
-          ) : (
-            <span className="grid size-12 place-items-center rounded-xl bg-ink-100 text-2xl dark:bg-ink-800">📦</span>
-          )}
-          <p className="text-sm text-ink-500 dark:text-ink-400">
-            Trovato su {lookupSource === "catalog" ? "il tuo catalogo" : "Open Food Facts"}. Controlla i dati e aggiungi scadenza e prezzo.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-4 rounded-3xl border border-ink-200 bg-white p-5 dark:border-ink-800 dark:bg-ink-900">
-        <div>
-          <label htmlFor="f-name" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-            Nome *
-          </label>
-          <input
-            id="f-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Es. Yogurt alla fragola"
-            className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="f-brand" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Marca
-            </label>
-            <input
-              id="f-brand"
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              placeholder="Es. Valio"
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            />
-          </div>
-          <div>
-            <label htmlFor="f-category" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Categoria
-            </label>
-            <select
-              id="f-category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            >
-              <option value="">— Seleziona —</option>
-              {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.emoji} {c.value}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="f-quantity" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Quantità
-            </label>
-            <input
-              id="f-quantity"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="Es. 4x100 g"
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            />
-          </div>
-          <div>
-            <label htmlFor="f-unit" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Unità
-            </label>
-            <select
-              id="f-unit"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            >
-              <option value="">—</option>
-              <option value="g">g</option>
-              <option value="kg">kg</option>
-              <option value="ml">ml</option>
-              <option value="l">l</option>
-              <option value="pcs">pz</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="f-purchase" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Data di acquisto
-            </label>
-            <input
-              id="f-purchase"
-              type="date"
-              value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            />
-          </div>
-          <div>
-            <label htmlFor="f-expiry" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-              Scadenza *
-            </label>
-            <input
-              id="f-expiry"
-              type="date"
-              required
-              value={expirationDate}
-              onChange={(e) => setExpirationDate(e.target.value)}
-              className="mt-1 w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="f-price" className="block text-xs font-bold text-ink-500 dark:text-ink-400">
-            Prezzo (€)
-          </label>
-          <div className="mt-1 flex gap-2">
-            <input
-              id="f-price"
-              value={priceText}
-              onChange={(e) => {
-                setPriceText(e.target.value);
-                setPriceTouched(true);
-              }}
-              placeholder="0,00"
-              inputMode="decimal"
-              className="min-w-0 flex-1 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm tabular-nums outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-ink-700 dark:bg-ink-800"
-            />
-            <button
-              type="button"
-              onClick={onPriceLookup}
-              disabled={!barcode || priceBusy}
-              className="flex items-center gap-1.5 rounded-2xl bg-ink-900 px-4 py-3 text-xs font-bold text-white transition hover:bg-ink-800 disabled:opacity-50 dark:bg-white dark:text-ink-900 dark:hover:bg-ink-100"
-            >
-              {priceBusy ? <Spinner className="size-4" /> : "🔍"} Cerca prezzo
-            </button>
-          </div>
-          {priceLookup?.found && parseEuro(priceText) !== null && (
-            <p className="mt-1.5 text-xs text-ink-500 dark:text-ink-400">
-              Prezzo da {priceLookup.source === "s-kaupat" ? "S-Kaupat/Coop" : priceLookup.source}
-              {priceLookup.cached ? " (cache)" : ""}: {formatEuro(parseEuro(priceText) ?? 0)}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={resetCapture}
-          className="flex-1 rounded-2xl bg-ink-100 px-4 py-3.5 text-sm font-bold text-ink-700 transition dark:bg-ink-800 dark:text-ink-200"
-        >
-          Annulla
-        </button>
-        <button
-          type="submit"
-          disabled={saving || lookupBusy}
-          className="flex-1 rounded-2xl bg-brand-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-600/30 transition hover:bg-brand-700 disabled:opacity-60"
-        >
-          {saving ? "Salvataggio…" : "Salva in dispensa"}
-        </button>
-      </div>
-    </form>
+      <ProductForm
+        key={formKey}
+        initial={formSeed}
+        lookupBanner={hasLookup ? { source: lookupSource as ProductLookup["source"], imageUrl: formSeed.imageUrl } : null}
+        lookupBusy={lookupBusy}
+        saving={saving}
+        submitLabel="Salva in dispensa"
+        onCancel={resetCapture}
+        onSubmit={onSave}
+      />
+    </div>
   );
 }

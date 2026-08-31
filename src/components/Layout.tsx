@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
+import { AddMenuProvider, useAddMenu } from "./AddMenu";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "🏠", end: true },
@@ -14,7 +15,15 @@ interface LayoutProps {
 
 /** App shell: bottom navigation on mobile, sidebar on desktop. */
 export function Layout({ children }: LayoutProps) {
-  const navigate = useNavigate();
+  return (
+    <AddMenuProvider>
+      <LayoutInner>{children}</LayoutInner>
+    </AddMenuProvider>
+  );
+}
+
+function LayoutInner({ children }: LayoutProps) {
+  const addMenu = useAddMenu();
 
   return (
     <div className="min-h-dvh bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
@@ -49,10 +58,10 @@ export function Layout({ children }: LayoutProps) {
         </nav>
 
         <button
-          onClick={() => void navigate("/add")}
+          onClick={() => addMenu.open()}
           className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-brand-600/30 transition hover:bg-brand-700"
         >
-          <span className="text-lg leading-none">＋</span> Aggiungi prodotto
+          <span className="text-lg leading-none">＋</span> Aggiungi
         </button>
       </aside>
 
@@ -71,8 +80,8 @@ export function Layout({ children }: LayoutProps) {
           {/* Center FAB */}
           <div className="relative flex justify-center">
             <button
-              onClick={() => void navigate("/add")}
-              aria-label="Aggiungi prodotto"
+              onClick={() => addMenu.open()}
+              aria-label="Aggiungi"
               className="absolute -top-5 grid size-14 place-items-center rounded-2xl bg-brand-600 text-2xl font-bold text-white shadow-lg shadow-brand-600/40 transition active:scale-95"
             >
               ＋

@@ -30,6 +30,17 @@ registerRoute(
   }),
 );
 
+// Product images from Open Food Facts: immutable-ish, cached for a month.
+registerRoute(
+  ({ url }) => url.hostname === "images.openfoodfacts.org",
+  new CacheFirst({
+    cacheName: "openfoodfacts-images",
+    plugins: [
+      new ExpirationPlugin({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+    ],
+  }),
+);
+
 // Never cache Supabase / edge function calls (auth-sensitive).
 registerRoute(
   ({ url }) => url.hostname.endsWith(".supabase.co") || url.hostname.endsWith(".supabase.in"),

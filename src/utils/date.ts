@@ -52,30 +52,34 @@ export function daysBetweenDates(from: string, to: string): number {
   return daysBetween(parseDateOnly(from), parseDateOnly(to));
 }
 
-/** Days from today until `expirationDate` (negative when already past). */
-export function daysUntil(expirationDate: string, from = todayLocal()): number {
+/** Days from today until `expirationDate` (negative when already past).
+ *  Null (unknown expiry) yields +Infinity: never "expiring". */
+export function daysUntil(expirationDate: string | null, from = todayLocal()): number {
+  if (!expirationDate) return Number.POSITIVE_INFINITY;
   return daysBetween(from, parseDateOnly(expirationDate));
 }
 
 /** True when `expirationDate` falls within the next `windowDays` days (inclusive). */
-export function isWithinWindow(expirationDate: string, windowDays: number, from = todayLocal()): boolean {
+export function isWithinWindow(expirationDate: string | null, windowDays: number, from = todayLocal()): boolean {
+  if (!expirationDate) return false;
   const d = daysUntil(expirationDate, from);
   return d >= 0 && d <= windowDays;
 }
 
-/** True when the date is strictly in the past. */
-export function isPastDate(dateOnly: string, from = todayLocal()): boolean {
+/** True when the date is strictly in the past. Null → false. */
+export function isPastDate(dateOnly: string | null, from = todayLocal()): boolean {
+  if (!dateOnly) return false;
   return daysUntil(dateOnly, from) < 0;
 }
 
-/** Human friendly date in Italian, e.g. "sab 30 ago". */
-export function formatDate(dateOnly: string, style: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }): string {
+/** Human friendly date in Italian, e.g. "sab 30 ago". Null → "—". */
+export function formatDate(dateOnly: string | null, style: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }): string {
   if (!dateOnly) return "—";
   return new Intl.DateTimeFormat("it-IT", style).format(parseDateOnly(dateOnly));
 }
 
-/** Full Italian date, e.g. "30 agosto 2026". */
-export function formatDateLong(dateOnly: string): string {
+/** Full Italian date, e.g. "30 agosto 2026". Null → "—". */
+export function formatDateLong(dateOnly: string | null): string {
   return formatDate(dateOnly, { day: "numeric", month: "long", year: "numeric" });
 }
 

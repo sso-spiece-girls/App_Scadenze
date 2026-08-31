@@ -19,10 +19,7 @@ export const NOTIFY_LEAD_DAYS = 7;
 /** Currency used across the app. */
 export const CURRENCY = "EUR";
 
-/** How long a Coop.fi/S-Kaupat price lookup stays fresh in the cache (hours). */
-export const PRICE_CACHE_TTL_HOURS = 24;
-
-/** Day the daily notification runs (hours in UTC; 06:00 UTC ≈ 09:00 Helsinki). */
+/** Day the daily notification runs (hours in UTC; 06:00 UTC ≈ 08:00 Roma). */
 export const NOTIFY_CRON_TIME = "0 6 * * *";
 
 export const STATUS_LABELS: Record<string, string> = {

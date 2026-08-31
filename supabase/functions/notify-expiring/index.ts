@@ -14,7 +14,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
-import { corsHeaders, json, helsinkiDate } from "../_shared/cors.ts";
+import { corsHeaders, json, storeDate } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -126,8 +126,8 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const today = helsinkiDate();
-  const horizon = helsinkiDate(NOTIFY_LEAD_DAYS);
+  const today = storeDate();
+  const horizon = storeDate(NOTIFY_LEAD_DAYS);
 
   try {
     const { data: products, error } = await supabase

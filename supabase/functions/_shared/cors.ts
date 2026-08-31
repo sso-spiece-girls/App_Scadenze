@@ -27,9 +27,9 @@ export async function fetchJson(url: string, init?: RequestInit, timeoutMs = 15_
   }
 }
 
-/** Today's date in the Helsinki timezone as YYYY-MM-DD (optionally shifted by days). */
-export function helsinkiDate(offsetDays = 0): string {
+/** Today's date in the store's timezone (Europe/Rome) as YYYY-MM-DD (optionally shifted by days). */
+export function storeDate(offsetDays = 0): string {
   const now = new Date();
   const shifted = new Date(now.getTime() + offsetDays * 86_400_000);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Helsinki" }).format(shifted);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(shifted);
 }

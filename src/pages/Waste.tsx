@@ -41,8 +41,20 @@ export function Waste() {
 
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="Prodotti sprecati" icon="🧾" value={stats.count} />
+        <StatCard label="Unità sprecate" icon="📦" value={stats.units} />
         <StatCard label="Media per prodotto" icon="⚖️" value={formatEuro(stats.average)} />
+        <StatCard
+          label="Categoria principale"
+          icon="🏷"
+          value={stats.byCategory[0] ? `${stats.byCategory[0].category.split(" ")[0]} — ${formatEuro(stats.byCategory[0].value)}` : "—"}
+        />
       </div>
+
+      {stats.topProduct && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+          <span className="font-bold">Prodotto con maggiore spreco:</span> {stats.topProduct.name} — {formatEuro(stats.topProduct.value)}
+        </div>
+      )}
 
       {stats.byCategory.length > 0 && (
         <section>
@@ -85,7 +97,7 @@ export function Waste() {
         )}
       </section>
 
-      <ProductActionDialogs actions={actions} />
+      <ProductActionDialogs actions={actions} api={api} />
     </div>
   );
 }

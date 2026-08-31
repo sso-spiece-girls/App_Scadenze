@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useProducts } from "../hooks/useProducts";
 import { useToastContext } from "../context/ToastContext";
 import { useProductActions, ProductActionDialogs } from "../components/ProductActions";
+import { useAddMenu } from "../components/AddMenu";
 import { ProductCard } from "../components/ProductCard";
 import { EmptyState, PageLoader } from "../components/ui";
 import { StatCard } from "../components/ui/misc";
@@ -15,6 +16,7 @@ export function Dashboard() {
   const api = useProducts(true);
   const { show } = useToastContext();
   const actions = useProductActions(api, show);
+  const addMenu = useAddMenu();
 
   const products = useMemo(() => decorateProducts(api.products), [api.products]);
   const waste = useMemo(() => computeWasteStats(api.products), [api.products]);
@@ -37,9 +39,17 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
-        <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">La tua dispensa in un colpo d'occhio.</p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-extrabold tracking-tight">Dashboard</h1>
+          <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">La tua dispensa in un colpo d'occhio.</p>
+        </div>
+        <button
+          onClick={() => addMenu.open()}
+          className="flex items-center gap-1.5 rounded-2xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-600/30 transition hover:bg-brand-700"
+        >
+          ＋ Aggiungi
+        </button>
       </header>
 
       <div className="grid grid-cols-2 gap-3">
@@ -77,7 +87,7 @@ export function Dashboard() {
         )}
       </section>
 
-      <ProductActionDialogs actions={actions} />
+      <ProductActionDialogs actions={actions} api={api} />
     </div>
   );
 }

@@ -15,7 +15,7 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { corsHeaders, json, helsinkiDate } from "../_shared/cors.ts";
+import { corsHeaders, json, storeDate } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -28,8 +28,8 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const today = helsinkiDate();
-  const graceDate = helsinkiDate(-(WASTE_GRACE_DAYS + 1)); // strictly beyond the grace day
+  const today = storeDate();
+  const graceDate = storeDate(-(WASTE_GRACE_DAYS + 1)); // strictly beyond the grace day
 
   try {
     // Phase 1: physical — the expiration date has passed.

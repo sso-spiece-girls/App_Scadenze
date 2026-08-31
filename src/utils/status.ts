@@ -21,7 +21,10 @@ export function computeEffectiveStatus(
   const d = daysUntil(product.expiration_date, today);
   if (product.status === "finished") return "finished";
   if (product.status === "wasted" || product.wasted_at) return "wasted";
-  if (product.status === "expired" || d < 0) return d <= -WASTE_GRACE_DAYS - 1 ? "wasted" : "expired";
+  // Unknown expiry (null) → never auto-expires; the user decides manually.
+  if (product.status === "expired" || (product.expiration_date && d < 0)) {
+    return d <= -WASTE_GRACE_DAYS - 1 ? "wasted" : "expired";
+  }
   return "active";
 }
 
@@ -37,12 +40,20 @@ export function isWastedProduct(
   const d = daysUntil(product.expiration_date, today);
   if (product.status === "finished") return false;
   if (product.status === "wasted" || product.wasted_at) return true;
+  if (!product.expiration_date) return false; // unknown expiry → never auto-wasted
   return d <= -WASTE_GRACE_DAYS - 1;
 }
 
-/** Value of the waste produced by a product (0 unless it is wasted). */
+/**
+ * Value of the waste produced by a product (0 unless it is wasted).
+ * Quantity-aware: only the units not yet consumed count toward the loss.
+ * `price` is the unit price, so waste = price × remaining units.
+ */
 export function wasteValueOf(product: Product, today: Date = new Date()): number {
-  return isWastedProduct(product, today) ? product.price : 0;
+  if (!isWastedProduct(product, today)) return 0;
+  const total = product.quantity_count ?? 1;
+  const consumed = Math.min(product.consumed_count ?? 0, total);
+  return product.price * Math.max(0, total - consumed);
 }
 
 export function isActiveStatus(status: ProductStatus): boolean {
@@ -54,7 +65,7 @@ export function isActiveStatus(status: ProductStatus): boolean {
 // ---------------------------------------------------------------------------
 
 /** Filters available on the products list. */
-export type ProductFilter = "all" | "active" | "expiring" | "expired" | "wasted" | "finished";
+export type ProductFilter = "all" | "active" | "expiring" | "expired" | "wasted" | "finished" | "noexpiry";
 
 /** Adds the render-time effective status and days-until to a product. */
 export function decorateProduct(product: Product, today: Date = todayLocal()): ProductWithStatus {
@@ -88,6 +99,8 @@ export function filterProducts(products: ProductWithStatus[], filter: ProductFil
       return products.filter((p) => p.effectiveStatus === "wasted");
     case "finished":
       return products.filter((p) => p.effectiveStatus === "finished");
+    case "noexpiry":
+      return products.filter((p) => !p.expiration_date && p.effectiveStatus !== "finished");
     default:
       return products;
   }
