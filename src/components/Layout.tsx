@@ -70,8 +70,10 @@ function LayoutInner({ children }: LayoutProps) {
         <div className="mx-auto max-w-3xl px-4 pt-6 md:px-8">{children}</div>
       </main>
 
-      {/* Mobile bottom nav */}
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-ink-200 bg-white/95 backdrop-blur dark:border-ink-800 dark:bg-ink-900/95 md:hidden">
+      {/* Mobile bottom nav: solid background (no backdrop-blur — backdrop
+          filters are expensive on low-end phones and the nav sits over
+          scrolling content, so the blur is invisible in practice). */}
+      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900 md:hidden">
         <div className="grid grid-cols-5 items-center px-2 pt-1">
           {NAV_ITEMS.slice(0, 2).map((item) => (
             <MobileNavItem key={item.to} item={item} />

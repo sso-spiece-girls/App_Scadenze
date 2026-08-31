@@ -1,16 +1,30 @@
 /** Money formatting and parsing helpers (Euro). */
 
+// Intl formatters are expensive to construct: cache them at module level so
+// rendering 100+ product cards never re-creates them per call.
+const euroFormatter = new Intl.NumberFormat("it-IT", {
+  style: "currency",
+  currency: "EUR",
+});
+
+const numberFormatters = new Map<number, Intl.NumberFormat>();
+
 /** Formats a number as EUR, e.g. 12.73 → "€12,73". */
 export function formatEuro(value: number): string {
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-  }).format(value);
+  return euroFormatter.format(value);
 }
 
 /** Formats a plain number with 2 decimals, e.g. 12.73 → "12,73". */
 export function formatNumber(value: number, digits = 2): string {
-  return new Intl.NumberFormat("it-IT", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  let formatter = numberFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("it-IT", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    numberFormatters.set(digits, formatter);
+  }
+  return formatter.format(value);
 }
 
 /** Parses "12,73" or "12.73" or "1.299,90" into a number (returns null if invalid). */

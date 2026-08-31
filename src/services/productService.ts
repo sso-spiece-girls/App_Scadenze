@@ -1,5 +1,6 @@
 import type { Product, ProductInput, ProductLookup } from "../types";
 import { supabase } from "../lib/supabase";
+import { barcodeCache } from "../lib/barcodeCache";
 import { mapOffCategory } from "../utils/categories";
 
 /**
@@ -193,12 +194,16 @@ export async function reactivateProduct(id: string, newExpiration?: string): Pro
   if (error) throw new Error(error.message);
 }
 
-/** Products with the same barcode already in the user's pantry. */
-export async function findExistingByBarcode(barcode: string): Promise<Product[]> {
-  const userId = await currentUserId();
+/** Products with the same barcode already in the user's pantry.
+ *  NOTE: the UI now reads this from the global product store (zero network);
+ *  this DB fallback is kept for callers without a loaded store. */
+export async function findExistingByBarcode(barcode: string): Promise<
+  Pick<Product, "id" | "name" | "barcode" | "expiration_date" | "status">[]
+> {
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select("id, name, barcode, expiration_date, status")
     .eq("user_id", userId)
     .eq("barcode", barcode)
     .neq("status", "finished")
@@ -212,10 +217,10 @@ export async function findExistingByBarcode(barcode: string): Promise<Product[]>
 // ---------------------------------------------------------------------------
 
 export async function lookupCatalog(barcode: string): Promise<ProductLookup | null> {
-  const userId = await currentUserId();
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("product_catalog")
-    .select("*")
+    .select("name, brand, category, image_url, quantity, unit")
     .eq("user_id", userId)
     .eq("barcode", barcode)
     .maybeSingle();
@@ -359,21 +364,57 @@ export async function lookupExistingProduct(barcode: string): Promise<ProductLoo
 /**
  * Full barcode → product resolution. Multi-level, stops at the first reliable
  * hit. Saves external results to the user's catalog for offline recognition.
+ *
+ * Session cache: every resolution (hit or miss) is stored in `barcodeCache`,
+ * so a barcode scanned twice in the same session costs ZERO network the
+ * second time. `pantry` (the global product store's list, already in memory)
+ * replaces the "existing product" DB query when provided.
  */
 export async function lookupProduct(
   barcode: string,
+  options: { pantry?: Pick<Product, "name" | "brand" | "category" | "image_url" | "quantity" | "unit" | "barcode" | "status">[] | null } = {},
 ): Promise<{ lookup: ProductLookup | null; source: "catalog" | "openfoodfacts" | "none" }> {
+  // Level 0: session memory cache — zero network for repeated scans.
+  const cached = barcodeCache.get(barcode);
+  if (cached) {
+    return { lookup: cached.lookup, source: cached.source === "none" ? "none" : cached.source };
+  }
+
   // Level 1: private catalog (instant, offline-friendly).
   try {
     const catalog = await lookupCatalog(barcode);
-    if (catalog) return { lookup: catalog, source: "catalog" };
+    if (catalog) {
+      barcodeCache.set(barcode, { lookup: catalog, source: "catalog" });
+      return { lookup: catalog, source: "catalog" };
+    }
   } catch {
     // catalog unavailable (offline/auth) — continue
   }
 
-  // Level 2: same barcode already in the user's pantry (no network).
-  const existing = await lookupExistingProduct(barcode);
-  if (existing) return { lookup: existing, source: "catalog" };
+  // Level 2: same barcode already in the user's pantry. When the caller
+  // already holds the store in memory (no network), use it; otherwise fall
+  // back to a single targeted DB query.
+  let existing: ProductLookup | null = null;
+  if (options.pantry && options.pantry.length > 0) {
+    const row = options.pantry.find((p) => p.barcode === barcode && p.status !== "finished");
+    if (row) {
+      existing = {
+        name: row.name,
+        brand: row.brand,
+        category: row.category,
+        image_url: row.image_url,
+        quantity: row.quantity,
+        unit: row.unit,
+        source: "catalog",
+      };
+    }
+  } else {
+    existing = await lookupExistingProduct(barcode);
+  }
+  if (existing) {
+    barcodeCache.set(barcode, { lookup: existing, source: "catalog" });
+    return { lookup: existing, source: "catalog" };
+  }
 
   // Level 3: Open Food Facts.
   const off = await lookupOpenFoodFacts(barcode);
@@ -383,9 +424,12 @@ export async function lookupProduct(
     } catch {
       // non fatal
     }
+    barcodeCache.set(barcode, { lookup: off, source: "openfoodfacts" });
     return { lookup: off, source: "openfoodfacts" };
   }
 
-  // Level 4: nothing → caller falls back to manual entry.
+  // Level 4: nothing → caller falls back to manual entry. The miss is cached
+  // too: re-scanning an unknown barcode must not re-hit the network.
+  barcodeCache.set(barcode, { lookup: null, source: "none" });
   return { lookup: null, source: "none" };
 }

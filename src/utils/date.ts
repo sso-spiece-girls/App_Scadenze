@@ -72,15 +72,30 @@ export function isPastDate(dateOnly: string | null, from = todayLocal()): boolea
   return daysUntil(dateOnly, from) < 0;
 }
 
+// Intl.DateTimeFormat construction is expensive: cache formatters per style.
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+const longDateFormatter = new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "long", year: "numeric" });
+
+function formatterFor(style: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(style);
+  let formatter = dateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("it-IT", style);
+    dateFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 /** Human friendly date in Italian, e.g. "sab 30 ago". Null → "—". */
 export function formatDate(dateOnly: string | null, style: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }): string {
   if (!dateOnly) return "—";
-  return new Intl.DateTimeFormat("it-IT", style).format(parseDateOnly(dateOnly));
+  return formatterFor(style).format(parseDateOnly(dateOnly));
 }
 
 /** Full Italian date, e.g. "30 agosto 2026". Null → "—". */
 export function formatDateLong(dateOnly: string | null): string {
-  return formatDate(dateOnly, { day: "numeric", month: "long", year: "numeric" });
+  if (!dateOnly) return "—";
+  return longDateFormatter.format(parseDateOnly(dateOnly));
 }
 
 /** Relative label used in product cards. */

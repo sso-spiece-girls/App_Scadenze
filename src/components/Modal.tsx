@@ -14,7 +14,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
     <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
       <button
         aria-label="Chiudi"
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
       <div className="animate-sheet-up relative w-full max-w-md rounded-t-3xl bg-white p-6 shadow-2xl dark:bg-ink-900 md:rounded-3xl">

@@ -1,5 +1,6 @@
 import type { PushSubscriptionRow } from "../types";
 import { supabase, vapidPublicKey } from "../lib/supabase";
+import { getCurrentUserId } from "./productService";
 
 /**
  * notificationService — Web Push subscription management (client side).
@@ -63,8 +64,13 @@ export async function subscribeForPush(): Promise<boolean> {
 
 /** Stores a PushSubscription in the DB (idempotent by endpoint). */
 export async function storeSubscription(subscription: PushSubscription): Promise<void> {
-  const { data: sessionData } = await supabase.auth.getUser();
-  if (!sessionData.user) return;
+  // Uses the cached session user id (no extra getUser() network call).
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch {
+    return; // not authenticated
+  }
 
   const subJson = subscription.toJSON() as {
     endpoint: string;
@@ -78,7 +84,8 @@ export async function storeSubscription(subscription: PushSubscription): Promise
     user_agent: navigator.userAgent,
   };
 
-  await supabase.from("push_subscriptions").upsert(row, { onConflict: "endpoint" });
+  const { error } = await supabase.from("push_subscriptions").upsert({ ...row, user_id: userId }, { onConflict: "endpoint" });
+  if (error) console.warn("push subscription save failed", error.message);
 }
 
 /** Unsubscribes this device and removes the stored row. */

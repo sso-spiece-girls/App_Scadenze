@@ -450,7 +450,7 @@ export function Import() {
             <button
               type="button"
               onClick={toggleCamera}
-              className="absolute right-3 top-3 rounded-full bg-black/50 px-3 py-2 text-xs font-bold text-white backdrop-blur"
+              className="absolute right-3 top-3 rounded-full bg-black/60 px-3 py-2 text-xs font-bold text-white"
             >
               🔄 {facing === "environment" ? "Posteriore" : "Frontale"}
             </button>

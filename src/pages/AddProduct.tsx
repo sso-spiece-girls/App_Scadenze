@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useProducts } from "../hooks/useProducts";
 import { useToastContext } from "../context/ToastContext";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner";
-import { findExistingByBarcode, lookupProduct, saveToCatalog } from "../services/productService";
+import { lookupProduct, saveToCatalog } from "../services/productService";
 import { validateBarcode, normalizeBarcode } from "../utils/barcode";
 import { formatDate } from "../utils/date";
 import { Spinner } from "../components/ui";
@@ -51,11 +51,11 @@ export function AddProduct() {
     setBarcode(code);
     setLookupBusy(true);
     try {
-      // Product identity and "already in pantry" check run in parallel.
-      const [{ lookup, source }, found] = await Promise.all([
-        lookupProduct(code),
-        findExistingByBarcode(code).catch(() => [] as Product[]),
-      ]);
+      // "Already in pantry" comes from the global store (zero network); the
+      // lookup chain reuses the same in-memory list for its level-2 check and
+      // the session barcode cache for repeated scans.
+      const found = api.products.filter((p) => p.barcode === code && p.status !== "finished");
+      const { lookup, source } = await lookupProduct(code, { pantry: api.products });
       setExisting(found);
       setLookupSource(source);
 
@@ -168,7 +168,7 @@ export function AddProduct() {
             <button
               type="button"
               onClick={toggleCamera}
-              className="absolute right-3 top-3 rounded-full bg-black/50 px-3 py-2 text-xs font-bold text-white backdrop-blur"
+              className="absolute right-3 top-3 rounded-full bg-black/60 px-3 py-2 text-xs font-bold text-white"
             >
               🔄 {facing === "environment" ? "Posteriore" : "Frontale"}
             </button>
