@@ -7,15 +7,22 @@ export interface BarcodeInfo {
   gtin?: string;
 }
 
-/** Computes the EAN/UPC check digit for a payload. */
+/**
+ * Computes the EAN/UPC check digit for a payload (GS1 algorithm).
+ *
+ * GS1: starting from the RIGHTMOST digit of the payload, digits are
+ * multiplied alternately by 3 and 1, starting with 3. So the rightmost
+ * digit (positionFromRight = 1) always gets weight 3, the next one 1, etc.
+ * This holds for EAN-13 (12-digit payload), EAN-8 (7-digit payload) and
+ * UPC-A (11-digit payload) alike.
+ */
 export function computeCheckDigit(payload: string): number {
-  // EAN-13 / UPC-A: sum of digits with weights 1,3 alternating from the right.
   let sum = 0;
   for (let i = 0; i < payload.length; i++) {
     const digit = payload.charCodeAt(i) - 48;
     if (digit < 0 || digit > 9) return -1;
     const positionFromRight = payload.length - i;
-    sum += digit * (positionFromRight % 2 === 0 ? 3 : 1);
+    sum += digit * (positionFromRight % 2 === 1 ? 3 : 1);
   }
   return (10 - (sum % 10)) % 10;
 }
@@ -75,7 +82,21 @@ export function expandUpcE(upcE: string): string {
   return `${body}${check}`;
 }
 
-/** Sanitizes scanner output into a canonical barcode string. */
+/**
+ * Sanitizes scanner output into a canonical barcode string.
+ *
+ * Leading-zero handling (GS1 semantics):
+ *   - codes longer than 13 digits (GTIN-14 / padded) collapse to the 13-digit
+ *     EAN-13 form;
+ *   - a 13-digit EAN-13 starting with "0" is the EAN encoding of a UPC-A
+ *     product: it collapses to the canonical 12-digit UPC-A form (the two
+ *     share the same check digit), NEVER below 12 digits;
+ *   - shorter codes (EAN-8, UPC-E, Code 128) are kept untouched.
+ */
 export function normalizeBarcode(raw: string): string {
-  return raw.trim().replace(/^0+(?=\d{6,})/, "");
+  const code = raw.trim();
+  if (!/^\d+$/.test(code) || code.length < 6) return code;
+  if (code.length > 13) return code.replace(/^0+(?=\d{13}$)/, "");
+  if (code.length === 13 && code.startsWith("0")) return code.slice(1);
+  return code;
 }
