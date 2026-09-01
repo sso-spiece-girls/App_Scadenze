@@ -4,11 +4,22 @@ import { useProducts } from "../hooks/useProducts";
 import { useToastContext } from "../context/ToastContext";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner";
 import { lookupProduct, saveToCatalog } from "../services/productService";
+import type { ScanResult } from "../services/barcodeService";
 import { validateBarcode, normalizeBarcode } from "../utils/barcode";
 import { formatDate } from "../utils/date";
 import { Spinner } from "../components/ui";
+import { ScannerDebugPanel, isScannerDebugEnabled } from "../components/ScannerDebugPanel";
 import { ProductForm, emptyFormValues, type ProductFormValues } from "../components/ProductForm";
 import type { Product, ProductLookup } from "../types";
+
+const SCAN_FORMAT_LABEL: Record<string, string> = {
+  ean_13: "EAN-13",
+  ean_8: "EAN-8",
+  upc_a: "UPC-A",
+  upc_e: "UPC-E",
+  code_128: "Code 128",
+  unknown: "",
+};
 
 type LookupSource = ProductLookup["source"] | "none";
 
@@ -30,26 +41,44 @@ export function AddProduct() {
   const [formSeed, setFormSeed] = useState<ProductFormValues>(() => emptyFormValues());
   const [formKey, setFormKey] = useState(0);
   const [saving, setSaving] = useState(false);
+  // Scanner diagnostics (DEBUG panel): last decoder event + pipeline stages.
+  const [scanEvent, setScanEvent] = useState<{ raw: string; format: string } | null>(null);
+  const [validationState, setValidationState] = useState<"valid" | "invalid" | null>(null);
+  const [lookupState, setLookupState] = useState<"found" | "not-found" | "pending" | null>(null);
+  const debug = isScannerDebugEnabled();
 
-  const handleDetected = (raw: string) => {
+  const handleDetected = (result: ScanResult) => {
     setScanActive(false);
-    const code = normalizeBarcode(raw);
+    setScanEvent({ raw: result.text, format: result.format });
+    const code = normalizeBarcode(result.text);
     const info = validateBarcode(code);
     if (!info.valid) {
-      setInvalidCode(raw);
-      show(`Codice non valido (${raw})`, "error");
+      setValidationState("invalid");
+      setInvalidCode(result.text);
+      show(`Codice non valido (${result.text})`, "error");
       return;
     }
+    setValidationState("valid");
     setInvalidCode(null);
     void applyCode(code);
   };
 
-  const { videoRef, error: scanError, isScanning, toggleCamera, facing } = useBarcodeScanner(scanActive, handleDetected);
+  const {
+    videoRef,
+    error: scanError,
+    isScanning,
+    toggleCamera,
+    facing,
+    cameraReady,
+    videoSize,
+    stats,
+  } = useBarcodeScanner(scanActive, handleDetected, { collectStats: debug });
 
   // -- barcode handling -----------------------------------------------------
   async function applyCode(code: string) {
     setBarcode(code);
     setLookupBusy(true);
+    setLookupState("pending");
     try {
       // "Already in pantry" comes from the global store (zero network); the
       // lookup chain reuses the same in-memory list for its level-2 check and
@@ -60,6 +89,7 @@ export function AddProduct() {
       setLookupSource(source);
 
       if (lookup) {
+        setLookupState("found");
         setFormSeed({
           name: lookup.name,
           brand: lookup.brand ?? "",
@@ -75,10 +105,12 @@ export function AddProduct() {
         });
         setFormKey((k) => k + 1);
       } else {
+        setLookupState("not-found");
         setFormSeed(emptyFormValues());
         setFormKey((k) => k + 1);
       }
     } catch {
+      setLookupState("not-found");
       setLookupSource("none");
       setExisting([]);
     } finally {
@@ -143,6 +175,9 @@ export function AddProduct() {
     setInvalidCode(null);
     setLookupSource("none");
     setExisting([]);
+    setScanEvent(null);
+    setValidationState(null);
+    setLookupState(null);
     setFormSeed(emptyFormValues());
     setFormKey((k) => k + 1);
   };
@@ -162,7 +197,7 @@ export function AddProduct() {
             <div className="pointer-events-none absolute inset-x-8 inset-y-6 rounded-2xl border-2 border-brand-400 scan-frame" />
             {isScanning && (
               <p className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-sm font-semibold text-white">
-                Inquadra il codice a barre…
+                🔍 Inquadra il codice a barre…
               </p>
             )}
             <button
@@ -173,6 +208,17 @@ export function AddProduct() {
               🔄 {facing === "environment" ? "Posteriore" : "Frontale"}
             </button>
           </div>
+        )}
+
+        {debug && (
+          <ScannerDebugPanel
+            videoRef={videoRef}
+            cameraReady={cameraReady}
+            videoSize={videoSize}
+            stats={stats}
+            validation={validationState}
+            lookup={lookupState}
+          />
         )}
 
         {scanError && (
@@ -201,7 +247,7 @@ export function AddProduct() {
 
         {invalidCode && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-            Codice non riconosciuto ({invalidCode}).
+            Codice letto dal decoder ma non valido ({invalidCode}).
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => {
@@ -282,7 +328,16 @@ export function AddProduct() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Aggiungi prodotto</h1>
-          {barcode && <p className="mt-0.5 break-all text-sm text-ink-500 dark:text-ink-400">Codice: {barcode}</p>}
+          {barcode && (
+            <>
+              <p className="mt-0.5 break-all text-sm text-ink-500 dark:text-ink-400">Codice: {barcode}</p>
+              {scanEvent && (
+                <p className="mt-0.5 text-xs font-semibold text-green-600 dark:text-green-400">
+                  ✓ Codice rilevato · {SCAN_FORMAT_LABEL[scanEvent.format] || scanEvent.format}
+                </p>
+              )}
+            </>
+          )}
         </div>
         <button onClick={resetCapture} className="rounded-2xl px-3 py-2 text-sm font-semibold text-ink-500 hover:bg-ink-100 dark:text-ink-400 dark:hover:bg-ink-800">
           ← Cambia
@@ -291,15 +346,16 @@ export function AddProduct() {
 
       {lookupBusy && (
         <div className="flex items-center gap-2 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm text-ink-500 dark:border-ink-800 dark:bg-ink-900 dark:text-ink-400">
-          <Spinner className="size-4" /> Cerco il prodotto…
+          <Spinner className="size-4" /> Ricerca prodotto…
         </div>
       )}
 
       {!hasLookup && !lookupBusy && barcode && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-          <p className="font-bold">Prodotto non trovato.</p>
+          <p className="font-bold">Barcode valido, prodotto non trovato.</p>
           <p className="mt-1">
-            Nessuna fonte conosce questo codice. Inserisci i dati manualmente: verranno ricordati per le prossime scansioni.
+            Il codice è stato letto correttamente ({barcode}), ma nessuna fonte lo conosce. Inserisci i dati
+            manualmente: verranno ricordati per le prossime scansioni.
           </p>
         </div>
       )}
@@ -313,6 +369,17 @@ export function AddProduct() {
             Puoi aggiungere una nuova confezione con una scadenza diversa.
           </p>
         </div>
+      )}
+
+      {debug && (
+        <ScannerDebugPanel
+          videoRef={videoRef}
+          cameraReady={cameraReady}
+          videoSize={videoSize}
+          stats={stats}
+          validation={validationState}
+          lookup={lookupState}
+        />
       )}
 
       <ProductForm

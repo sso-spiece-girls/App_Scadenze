@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useProducts } from "../hooks/useProducts";
 import { useToastContext } from "../context/ToastContext";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner";
+import type { ScanResult } from "../services/barcodeService";
+import { ScannerDebugPanel, isScannerDebugEnabled } from "../components/ScannerDebugPanel";
 import { recognizeReceiptText, preprocessReceiptImage, loadImageFromFile, type OcrProgress } from "../services/ocrService";
 import { parseReceiptText, receiptLooksReliable } from "../services/receiptParser";
 import { savePurchase } from "../services/purchaseService";
@@ -54,11 +56,22 @@ export function Import() {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleDetected = (raw: string) => {
-    setReceiptCode(raw);
+  const handleDetected = (result: ScanResult) => {
+    setReceiptCode(result.text);
     setStep("photo");
   };
-  const { videoRef, error: scanError, isScanning, stop, toggleCamera, facing } = useBarcodeScanner(step === "scan", handleDetected);
+  const scannerDebug = isScannerDebugEnabled();
+  const {
+    videoRef,
+    error: scanError,
+    isScanning,
+    stop,
+    toggleCamera,
+    facing,
+    cameraReady,
+    videoSize,
+    stats,
+  } = useBarcodeScanner(step === "scan", handleDetected, { collectStats: scannerDebug });
 
   // Photo preview cleanup.
   useEffect(() => {
@@ -455,6 +468,16 @@ export function Import() {
               🔄 {facing === "environment" ? "Posteriore" : "Frontale"}
             </button>
           </div>
+          {scannerDebug && (
+            <ScannerDebugPanel
+              videoRef={videoRef}
+              cameraReady={cameraReady}
+              videoSize={videoSize}
+              stats={stats}
+              validation={null}
+              lookup={null}
+            />
+          )}
           {scanError && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
               {scanError === "denied"
